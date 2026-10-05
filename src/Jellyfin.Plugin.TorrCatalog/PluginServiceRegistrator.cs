@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.TorrCatalog.Releases;
 using Jellyfin.Plugin.TorrCatalog.Tmdb;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
@@ -18,6 +19,15 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<TmdbClient>();
         serviceCollection.AddSingleton<Catalog>();
+
+        // Per-search timeout comes from config (linked token); this is only the outer bound.
+        serviceCollection.AddHttpClient(ProwlarrClient.HttpClientName, c =>
+        {
+            c.Timeout = TimeSpan.FromSeconds(150);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-TorrCatalog/0.1");
+        });
+        serviceCollection.AddSingleton<ProwlarrClient>();
+        serviceCollection.AddSingleton<ReleaseService>();
 
         // Plugin services share the ASP.NET container, so a global MVC filter sees every API action.
         serviceCollection.AddSingleton<VirtualItemFilter>();

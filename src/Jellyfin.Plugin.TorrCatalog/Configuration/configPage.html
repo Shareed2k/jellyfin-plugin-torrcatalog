@@ -5,7 +5,7 @@
     <title>TorrCatalog</title>
 </head>
 <body>
-    <div id="TorrCatalogConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div id="TorrCatalogConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
                 <form id="TorrCatalogConfigForm">
@@ -34,6 +34,65 @@
                         <span id="TestTmdbResult" style="margin-left:1em"></span>
                     </div>
 
+                    <h2>Prowlarr</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ProwlarrUrl">Prowlarr URL</label>
+                        <input id="ProwlarrUrl" type="url" is="emby-input" placeholder="http://prowlarr:9696/" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ProwlarrApiKey">Prowlarr API key</label>
+                        <input id="ProwlarrApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Prowlarr → Settings → General → API Key. Stored server-side only.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SearchTimeoutSeconds">Search timeout, seconds</label>
+                        <input id="SearchTimeoutSeconds" type="number" min="5" max="120" is="emby-input" />
+                    </div>
+                    <div>
+                        <button is="emby-button" type="button" id="TestProwlarr" class="raised emby-button"><span>Test Prowlarr</span></button>
+                        <span id="TestProwlarrResult" style="margin-left:1em"></span>
+                    </div>
+
+                    <h2>Release preferences</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxResolution">Max resolution</label>
+                        <select id="MaxResolution" is="emby-select">
+                            <option value="2160">2160p (4K)</option>
+                            <option value="1080">1080p</option>
+                            <option value="720">720p</option>
+                        </select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MinSeeders">Min seeders</label>
+                        <input id="MinSeeders" type="number" min="0" is="emby-input" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxSizeGb">Max size, GB (0 = unlimited)</label>
+                        <input id="MaxSizeGb" type="number" min="0" is="emby-input" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PreferredLanguages">Preferred languages</label>
+                        <input id="PreferredLanguages" type="text" is="emby-input" placeholder="ru,en" />
+                        <div class="fieldDescription">Codes in order of preference.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LanguageAliases">Language tags in titles</label>
+                        <input id="LanguageAliases" type="text" is="emby-input" />
+                        <div class="fieldDescription">Format: <code>ru=RUS,RU,DUB;en=ENG,EN</code></div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TestTmdbId">Test release search: TMDB movie id</label>
+                        <input id="TestTmdbId" type="number" is="emby-input" placeholder="693134" />
+                    </div>
+                    <div>
+                        <button is="emby-button" type="button" id="TestSearch" class="raised emby-button"><span>Search releases</span></button>
+                        <span id="TestSearchResult" style="margin-left:1em"></span>
+                    </div>
+                    <table style="width:100%;margin:1em 0;font-size:90%">
+                        <thead><tr><th>Score</th><th>Title</th><th>Size</th><th>Seeds</th><th>Why</th></tr></thead>
+                        <tbody id="Releases"></tbody>
+                    </table>
+
                     <h2>Catalog sections</h2>
                     <div class="fieldDescription">Each enabled section appears as a virtual movie library (and a "Latest" row on Home).
                         Path is relative to api.themoviedb.org/3/, e.g. <code>trending/movie/week</code> or <code>discover/movie</code>
@@ -55,6 +114,8 @@
                 var pluginId = '4f0c6a3e-9b8d-4c52-a1f7-3e2d5b6c7a81';
                 var page = document.querySelector('#TorrCatalogConfigPage');
                 var tbody = page.querySelector('#Sections');
+                // Simple scalar settings mapped 1:1 between input id and config property.
+                var fields = ['ProwlarrUrl', 'ProwlarrApiKey', 'SearchTimeoutSeconds', 'MaxResolution', 'MinSeeders', 'MaxSizeGb', 'PreferredLanguages', 'LanguageAliases'];
 
                 function cell(content) {
                     var td = document.createElement('td');
@@ -104,6 +165,7 @@
                         page.querySelector('#Language').value = config.Language || '';
                         page.querySelector('#Region').value = config.Region || '';
                         page.querySelector('#IncludeAdult').checked = !!config.IncludeAdult;
+                        fields.forEach(function (f) { page.querySelector('#' + f).value = config[f] == null ? '' : config[f]; });
                         tbody.innerHTML = '';
                         (config.Sections || []).forEach(addRow);
                         Dashboard.hideLoadingMsg();
@@ -121,19 +183,53 @@
                         config.Region = page.querySelector('#Region').value.trim();
                         config.IncludeAdult = page.querySelector('#IncludeAdult').checked;
                         config.Sections = readRows();
+                        fields.forEach(function (f) {
+                            var el = page.querySelector('#' + f);
+                            config[f] = el.type === 'number' || f === 'MaxResolution' ? parseInt(el.value || '0', 10) : el.value.trim();
+                        });
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     });
                 }
 
-                // The health check reads the server-side config, so save before testing.
-                page.querySelector('#TestTmdb').addEventListener('click', function () {
-                    var out = page.querySelector('#TestTmdbResult');
+                function health(key, out) {
                     out.textContent = 'Saving and testing…';
                     save().then(function () {
                         return ApiClient.getJSON(ApiClient.getUrl('Plugins/TorrCatalog/Health'));
                     }).then(function (r) {
-                        out.textContent = r.Tmdb === 'ok' ? 'TMDB OK' : 'TMDB error: ' + r.Tmdb;
+                        out.textContent = r[key] === 'ok' ? key + ' OK' : key + ' error: ' + r[key];
                     }, function () { out.textContent = 'Request failed'; });
+                }
+
+                page.querySelector('#TestProwlarr').addEventListener('click', function () {
+                    health('Prowlarr', page.querySelector('#TestProwlarrResult'));
+                });
+
+                page.querySelector('#TestSearch').addEventListener('click', function () {
+                    var out = page.querySelector('#TestSearchResult');
+                    var body = page.querySelector('#Releases');
+                    var id = parseInt(page.querySelector('#TestTmdbId').value, 10);
+                    if (!id) { out.textContent = 'Enter a TMDB movie id'; return; }
+                    out.textContent = 'Saving and searching…';
+                    body.innerHTML = '';
+                    save().then(function () {
+                        return ApiClient.getJSON(ApiClient.getUrl('Plugins/TorrCatalog/Releases/Movie/' + id));
+                    }).then(function (list) {
+                        out.textContent = list.length + ' releases';
+                        list.slice(0, 30).forEach(function (r) {
+                            var tr = document.createElement('tr');
+                            [Math.round(r.Score), r.Title, (r.Size / 1e9).toFixed(1) + ' GB', r.Seeders, r.Reasons.join(', ')].forEach(function (v) {
+                                var td = document.createElement('td');
+                                td.textContent = v;
+                                tr.appendChild(td);
+                            });
+                            body.appendChild(tr);
+                        });
+                    }, function (e) { out.textContent = 'Search failed' + (e && e.status ? ' (HTTP ' + e.status + ')' : ''); });
+                });
+
+                // Health checks read the server-side config, so save before testing.
+                page.querySelector('#TestTmdb').addEventListener('click', function () {
+                    health('Tmdb', page.querySelector('#TestTmdbResult'));
                 });
 
                 page.querySelector('#TorrCatalogConfigForm').addEventListener('submit', function (e) {

@@ -78,7 +78,7 @@ public sealed partial class Catalog
     public async Task<TmdbMovie> GetMovieAsync(int tmdbId, CancellationToken ct)
     {
         var cfg = Config();
-        return await CachedAsync($"movie:{cfg.Language}:{tmdbId}", DetailsTtl,
+        return await _cache.GetOrFetchAsync($"movie:{cfg.Language}:{tmdbId}", DetailsTtl,
             () => _tmdb.GetAsync<TmdbMovie>(cfg, $"movie/{tmdbId}", string.Empty, CancellationToken.None), ct).ConfigureAwait(false);
     }
 
@@ -86,7 +86,7 @@ public sealed partial class Catalog
     {
         var cfg = Config();
         term = term.Trim();
-        var page = await CachedAsync($"search:{cfg.Language}:{term.ToLowerInvariant()}", SearchTtl,
+        var page = await _cache.GetOrFetchAsync($"search:{cfg.Language}:{term.ToLowerInvariant()}", SearchTtl,
             () => _tmdb.GetAsync<TmdbPage>(cfg, "search/movie", "query=" + Uri.EscapeDataString(term), CancellationToken.None), ct).ConfigureAwait(false);
         return page.Results.Take(limit).Select(ToDto).ToArray();
     }
@@ -97,30 +97,8 @@ public sealed partial class Catalog
     {
         var cfg = Config();
         var query = section.Query.Length > 0 ? $"{section.Query}&page={page}" : $"page={page}";
-        return CachedAsync($"section:{cfg.Language}:{cfg.Region}:{cfg.IncludeAdult}:{section.Path}?{query}", SectionTtl,
+        return _cache.GetOrFetchAsync($"section:{cfg.Language}:{cfg.Region}:{cfg.IncludeAdult}:{section.Path}?{query}", SectionTtl,
             () => _tmdb.GetAsync<TmdbPage>(cfg, section.Path, query, CancellationToken.None), ct);
-    }
-
-    // Caches the in-flight task, so concurrent callers share one TMDB request; failures are evicted.
-    // The fetch itself ignores the caller's token (shared by others); callers stop waiting via WaitAsync.
-    // ponytail: GetOrCreate isn't atomic, a rare race can issue a duplicate request. Keyed lock if that matters.
-    async Task<T> CachedAsync<T>(string key, TimeSpan ttl, Func<Task<T>> fetch, CancellationToken ct)
-    {
-        var lazy = _cache.GetOrCreate(key, e =>
-        {
-            e.AbsoluteExpirationRelativeToNow = ttl;
-            return new Lazy<Task<T>>(fetch);
-        })!;
-
-        try
-        {
-            return await lazy.Value.WaitAsync(ct).ConfigureAwait(false);
-        }
-        catch when (lazy.Value.IsFaulted || lazy.Value.IsCanceled)
-        {
-            _cache.Remove(key);
-            throw;
-        }
     }
 
     public BaseItemDto ToDto(TmdbMovie m)

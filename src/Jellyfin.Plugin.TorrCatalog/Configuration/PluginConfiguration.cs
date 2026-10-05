@@ -16,6 +16,28 @@ public class PluginConfiguration : BasePluginConfiguration
     // Array, not List: XmlSerializer appends to an initialized List and would duplicate the defaults.
     public CatalogSection[] Sections { get; set; } = DefaultSections();
 
+    /// <summary>Gets or sets the Prowlarr base URL, e.g. http://prowlarr:9696/.</summary>
+    public string ProwlarrUrl { get; set; } = string.Empty;
+
+    public string ProwlarrApiKey { get; set; } = string.Empty;
+
+    public int SearchTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Gets or sets the minimum seeders; releases below it are dropped.</summary>
+    public int MinSeeders { get; set; } = 1;
+
+    /// <summary>Gets or sets the maximum release size in GB; 0 means unlimited.</summary>
+    public int MaxSizeGb { get; set; }
+
+    /// <summary>Gets or sets the highest wanted resolution (2160, 1080, 720); higher releases are ranked down.</summary>
+    public int MaxResolution { get; set; } = 2160;
+
+    /// <summary>Gets or sets language codes in order of preference, e.g. "ru,en".</summary>
+    public string PreferredLanguages { get; set; } = "ru,en";
+
+    /// <summary>Gets or sets title tags per language: "ru=RUS,RU,DUB;en=ENG,EN".</summary>
+    public string LanguageAliases { get; set; } = "ru=RUS,RU,Russian,DUB,MVO,DVO,AVO,Дубляж,Дублированный;en=ENG,EN,English";
+
     public static CatalogSection[] DefaultSections() =>
     [
         new() { Id = "trending", Name = "Trending", Path = "trending/movie/week" },
