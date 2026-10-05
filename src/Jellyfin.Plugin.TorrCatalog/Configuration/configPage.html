@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TorrCatalog</title>
+</head>
+<body>
+    <div id="TorrCatalogConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="TorrCatalogConfigForm">
+                    <h2>TMDB</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">API key or read access token</label>
+                        <input id="TmdbApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">v3 API key or v4 read access token from themoviedb.org/settings/api. Stored server-side only.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="Language">Language</label>
+                        <input id="Language" type="text" is="emby-input" placeholder="ru-RU" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="Region">Region</label>
+                        <input id="Region" type="text" is="emby-input" placeholder="IL" />
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="IncludeAdult" type="checkbox" is="emby-checkbox" />
+                            <span>Include adult content</span>
+                        </label>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="button" id="TestTmdb" class="raised emby-button"><span>Test TMDB</span></button>
+                        <span id="TestTmdbResult" style="margin-left:1em"></span>
+                    </div>
+
+                    <h2>Catalog sections</h2>
+                    <div class="fieldDescription">Each enabled section appears as a virtual movie library (and a "Latest" row on Home).
+                        Path is relative to api.themoviedb.org/3/, e.g. <code>trending/movie/week</code> or <code>discover/movie</code>
+                        with query <code>sort_by=popularity.desc&amp;with_genres=16</code>. Keep a section's Id stable once used.</div>
+                    <table style="width:100%;margin:1em 0">
+                        <thead><tr><th>On</th><th>Id</th><th>Name</th><th>Path</th><th>Query</th><th></th></tr></thead>
+                        <tbody id="Sections"></tbody>
+                    </table>
+                    <button is="emby-button" type="button" id="AddSection" class="emby-button"><span>Add section</span></button>
+
+                    <div style="margin-top:2em">
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button"><span>Save</span></button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '4f0c6a3e-9b8d-4c52-a1f7-3e2d5b6c7a81';
+                var page = document.querySelector('#TorrCatalogConfigPage');
+                var tbody = page.querySelector('#Sections');
+
+                function cell(content) {
+                    var td = document.createElement('td');
+                    td.appendChild(content);
+                    return td;
+                }
+
+                function input(cls, value, type) {
+                    var el = document.createElement('input');
+                    el.type = type || 'text';
+                    el.className = cls;
+                    if (type === 'checkbox') { el.checked = !!value; } else { el.value = value || ''; el.style.width = '100%'; }
+                    return el;
+                }
+
+                function addRow(s) {
+                    var tr = document.createElement('tr');
+                    tr.appendChild(cell(input('s-enabled', s.Enabled, 'checkbox')));
+                    tr.appendChild(cell(input('s-id', s.Id)));
+                    tr.appendChild(cell(input('s-name', s.Name)));
+                    tr.appendChild(cell(input('s-path', s.Path)));
+                    tr.appendChild(cell(input('s-query', s.Query)));
+                    var del = document.createElement('button');
+                    del.type = 'button';
+                    del.textContent = '✕';
+                    del.addEventListener('click', function () { tr.remove(); });
+                    tr.appendChild(cell(del));
+                    tbody.appendChild(tr);
+                }
+
+                function readRows() {
+                    return Array.prototype.map.call(tbody.querySelectorAll('tr'), function (tr) {
+                        return {
+                            Enabled: tr.querySelector('.s-enabled').checked,
+                            Id: tr.querySelector('.s-id').value.trim(),
+                            Name: tr.querySelector('.s-name').value.trim(),
+                            Path: tr.querySelector('.s-path').value.trim(),
+                            Query: tr.querySelector('.s-query').value.trim()
+                        };
+                    }).filter(function (s) { return s.Id && s.Path; });
+                }
+
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        page.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
+                        page.querySelector('#Language').value = config.Language || '';
+                        page.querySelector('#Region').value = config.Region || '';
+                        page.querySelector('#IncludeAdult').checked = !!config.IncludeAdult;
+                        tbody.innerHTML = '';
+                        (config.Sections || []).forEach(addRow);
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                page.querySelector('#AddSection').addEventListener('click', function () {
+                    addRow({ Enabled: true, Id: 'custom-' + Date.now().toString(36), Name: '', Path: 'discover/movie', Query: 'sort_by=popularity.desc' });
+                });
+
+                function save() {
+                    return ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.TmdbApiKey = page.querySelector('#TmdbApiKey').value.trim();
+                        config.Language = page.querySelector('#Language').value.trim() || 'en-US';
+                        config.Region = page.querySelector('#Region').value.trim();
+                        config.IncludeAdult = page.querySelector('#IncludeAdult').checked;
+                        config.Sections = readRows();
+                        return ApiClient.updatePluginConfiguration(pluginId, config);
+                    });
+                }
+
+                // The health check reads the server-side config, so save before testing.
+                page.querySelector('#TestTmdb').addEventListener('click', function () {
+                    var out = page.querySelector('#TestTmdbResult');
+                    out.textContent = 'Saving and testing…';
+                    save().then(function () {
+                        return ApiClient.getJSON(ApiClient.getUrl('Plugins/TorrCatalog/Health'));
+                    }).then(function (r) {
+                        out.textContent = r.Tmdb === 'ok' ? 'TMDB OK' : 'TMDB error: ' + r.Tmdb;
+                    }, function () { out.textContent = 'Request failed'; });
+                });
+
+                page.querySelector('#TorrCatalogConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    save().then(Dashboard.processPluginConfigurationUpdateResult);
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

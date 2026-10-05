@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Jellyfin.Plugin.TorrCatalog/Jellyfin.Plugin.TorrCatalog.csproj" />
+  <Project Path="tests/Jellyfin.Plugin.TorrCatalog.Tests/Jellyfin.Plugin.TorrCatalog.Tests.csproj" />
+</Solution>

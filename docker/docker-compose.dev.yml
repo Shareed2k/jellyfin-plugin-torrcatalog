@@ -1,0 +1,26 @@
+# Runs on a remote docker host (no bind mounts): everything is baked into images.
+#   DOCKER_CONTEXT=remote-builder docker compose -f docker/docker-compose.dev.yml up -d --build
+name: torrcatalog-dev
+services:
+  jellyfin:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports: ["8096:8096"]
+    environment:
+      # Stand-in stream for every catalog movie until TorrServer playback exists.
+      # Must be reachable from clients (browser, TV), not just from the server.
+      TORRCATALOG_DEV_STREAM_URL: ${DEV_STREAM_URL:-http://192.168.88.95:8090/test.mp4}
+    volumes:
+      - config:/config
+      - cache:/cache
+    restart: unless-stopped
+  media:
+    build:
+      context: ..
+      dockerfile: docker/media.Dockerfile
+    ports: ["8090:80"]
+    restart: unless-stopped
+volumes:
+  config: {}
+  cache: {}
