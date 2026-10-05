@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.TorrCatalog.Releases;
 using Jellyfin.Plugin.TorrCatalog.Tmdb;
+using Jellyfin.Plugin.TorrCatalog.TorrServer;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +29,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<ProwlarrClient>();
         serviceCollection.AddSingleton<ReleaseService>();
+
+        serviceCollection.AddHttpClient(TorrServerClient.HttpClientName, c =>
+        {
+            c.Timeout = TimeSpan.FromSeconds(30);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-TorrCatalog/0.1");
+        });
+        serviceCollection.AddSingleton<TorrServerClient>();
+        serviceCollection.AddSingleton<StreamResolver>();
 
         // Plugin services share the ASP.NET container, so a global MVC filter sees every API action.
         serviceCollection.AddSingleton<VirtualItemFilter>();

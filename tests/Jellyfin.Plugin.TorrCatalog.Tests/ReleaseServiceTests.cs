@@ -35,7 +35,7 @@ public class ReleaseServiceTests
     [Fact]
     public async Task SearchesByIdAndTitlesMergesAndRanks()
     {
-        _http.Respond = r => r.RequestUri!.Host switch
+        _http.Respond = (r, _) => r.RequestUri!.Host switch
         {
             "api.themoviedb.org" => Json(new { Id = 693134, Title = "Дюна: Часть вторая", OriginalTitle = "Dune: Part Two", ReleaseDate = "2024-02-27", ImdbId = "tt15239678" }),
             _ => HttpUtility.ParseQueryString(r.RequestUri.Query)["type"] == "movie"
@@ -73,7 +73,7 @@ public class ReleaseServiceTests
     [Fact]
     public async Task ClientDtoCarriesNoUrls()
     {
-        _http.Respond = r => r.RequestUri!.Host == "api.themoviedb.org"
+        _http.Respond = (r, _) => r.RequestUri!.Host == "api.themoviedb.org"
             ? Json(new { Id = 1, Title = "X", ReleaseDate = "2026-01-01" })
             : Prowlarr(new[] { Release("a", "X.2026.1080p.WEB-DL", seeders: 10, hash: "AAA") });
 
@@ -88,7 +88,7 @@ public class ReleaseServiceTests
     [Fact]
     public async Task OneFailingStrategyDoesNotHideOthers()
     {
-        _http.Respond = r => r.RequestUri!.Host == "api.themoviedb.org"
+        _http.Respond = (r, _) => r.RequestUri!.Host == "api.themoviedb.org"
             ? Json(new { Id = 1, Title = "X", OriginalTitle = "Y", ReleaseDate = "2026-01-01" })
             : r.RequestUri.Query.Contains("query=X", StringComparison.Ordinal)
                 ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
@@ -104,7 +104,7 @@ public class ReleaseServiceTests
     public async Task InvalidProwlarrUrlIsRejected(string url)
     {
         _config.ProwlarrUrl = url;
-        _http.Respond = _ => Json(new { Id = 1, Title = "X", ReleaseDate = "2026-01-01" });
+        _http.Respond = (_, _) => Json(new { Id = 1, Title = "X", ReleaseDate = "2026-01-01" });
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _service.SearchMovieAsync(1, Ct));
         Assert.DoesNotContain(_http.Requests, r => r.RequestUri!.Host != "api.themoviedb.org");
@@ -130,24 +130,4 @@ public class ReleaseServiceTests
         new(HttpStatusCode.OK) { Content = JsonContent.Create(body, options: new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }) };
 
     static HttpResponseMessage Prowlarr(object[] releases) => new(HttpStatusCode.OK) { Content = JsonContent.Create(releases) };
-
-    sealed class FakeHttp : HttpMessageHandler, IHttpClientFactory
-    {
-        public List<HttpRequestMessage> Requests { get; } = [];
-
-        public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = _ => new HttpResponseMessage(HttpStatusCode.NotFound);
-
-        public HttpClient CreateClient(string name) =>
-            new(this, disposeHandler: false) { BaseAddress = name == TmdbClient.HttpClientName ? TmdbClient.BaseAddress : null };
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            lock (Requests)
-            {
-                Requests.Add(request);
-            }
-
-            return Task.FromResult(Respond(request));
-        }
-    }
 }

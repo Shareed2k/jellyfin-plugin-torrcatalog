@@ -53,6 +53,30 @@
                         <span id="TestProwlarrResult" style="margin-left:1em"></span>
                     </div>
 
+                    <h2>TorrServer</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TorrServerUrl">TorrServer URL</label>
+                        <input id="TorrServerUrl" type="url" is="emby-input" placeholder="http://192.168.1.10:8090/" />
+                        <div class="fieldDescription">Players are redirected to TorrServer streams, so this address must be reachable from clients (TV, phone), not only from Jellyfin.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TorrServerUsername">Username (optional)</label>
+                        <input id="TorrServerUsername" type="text" is="emby-input" autocomplete="off" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TorrServerPassword">Password (optional)</label>
+                        <input id="TorrServerPassword" type="password" is="emby-input" autocomplete="off" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MetadataTimeoutSeconds">Torrent metadata timeout, seconds</label>
+                        <input id="MetadataTimeoutSeconds" type="number" min="5" max="90" is="emby-input" />
+                        <div class="fieldDescription">After this the next best release is tried (up to 3).</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="button" id="TestTorrServer" class="raised emby-button"><span>Test TorrServer</span></button>
+                        <span id="TestTorrServerResult" style="margin-left:1em"></span>
+                    </div>
+
                     <h2>Release preferences</h2>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="MaxResolution">Max resolution</label>
@@ -115,7 +139,7 @@
                 var page = document.querySelector('#TorrCatalogConfigPage');
                 var tbody = page.querySelector('#Sections');
                 // Simple scalar settings mapped 1:1 between input id and config property.
-                var fields = ['ProwlarrUrl', 'ProwlarrApiKey', 'SearchTimeoutSeconds', 'MaxResolution', 'MinSeeders', 'MaxSizeGb', 'PreferredLanguages', 'LanguageAliases'];
+                var fields = ['ProwlarrUrl', 'ProwlarrApiKey', 'SearchTimeoutSeconds', 'TorrServerUrl', 'TorrServerUsername', 'TorrServerPassword', 'MetadataTimeoutSeconds', 'MaxResolution', 'MinSeeders', 'MaxSizeGb', 'PreferredLanguages', 'LanguageAliases'];
 
                 function cell(content) {
                     var td = document.createElement('td');
@@ -199,6 +223,10 @@
                         out.textContent = r[key] === 'ok' ? key + ' OK' : key + ' error: ' + r[key];
                     }, function () { out.textContent = 'Request failed'; });
                 }
+
+                page.querySelector('#TestTorrServer').addEventListener('click', function () {
+                    health('TorrServer', page.querySelector('#TestTorrServerResult'));
+                });
 
                 page.querySelector('#TestProwlarr').addEventListener('click', function () {
                     health('Prowlarr', page.querySelector('#TestProwlarrResult'));

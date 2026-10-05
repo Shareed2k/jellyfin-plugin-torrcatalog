@@ -5,7 +5,8 @@ movie libraries. Items don't exist in the Jellyfin library DB: a global MVC filt
 API calls for their IDs, so every client (Web, Android, Android TV, Samsung Tizen) shows them natively,
 including "Latest in <section>" rows on Home.
 
-Status: Phase 1 (catalog). Playback uses a dev stand-in stream; Prowlarr + TorrServer come next.
+Status: Phase 4 MVP. Catalog (TMDB), release search (Prowlarr) and torrent playback (TorrServer) work
+for movies. Next: manual release picker, TV shows, persistence.
 
 ## How it works
 
@@ -16,10 +17,26 @@ Status: Phase 1 (catalog). Playback uses a dev stand-in stream; Prowlarr + TorrS
 - **Items**: `/Items/{id}`, images (302 to image.tmdb.org; the TMDB image path is the image tag),
   `/Items?ids=`, and empties for intros/trailers/similar/theme media/segments.
 - **Search**: TMDB movie matches are appended to Jellyfin's own `/Items?searchTerm=` results.
-- **Playback**: media sources are declared `Protocol=File`, so every client requests
-  `/Videos/{id}/stream`, which is redirected (302) to the stream URL. `Protocol=Http` breaks
-  jellyfin-android (its ExoPlayer assumes HLS for Http sources).
-- **Cache**: in-memory (30 min sections, 24 h details, 15 min search), concurrent requests share one fetch.
+- **Releases**: Prowlarr is searched by IMDb/TMDB id plus localized and original title + year, results
+  are merged by infohash, parsed (resolution, source, codec, HDR, audio, language incl. RuTracker
+  `D, P, A` codes) and scored with an explanation per point. Clients never see magnet/download URLs.
+- **Playback**: `PlaybackInfo` resolves the movie: best positive-scored release → TorrServer → wait for
+  metadata → largest non-junk video file → ffprobe (real codecs/audio tracks, preferred-language audio as
+  default). A release that times out or has no video is dropped and the next one is tried (max 3).
+  Media sources are declared `Protocol=File`, so every client requests `/Videos/{id}/stream`, which is
+  redirected (302) to TorrServer's `/stream` (Range/seek supported). `Protocol=Http` breaks
+  jellyfin-android (its ExoPlayer assumes HLS for Http sources). Opening a details page starts the
+  release search in the background so Play doesn't wait for Prowlarr.
+- **Cache**: in-memory (30 min sections and release searches, 24 h details, 15 min search, 6 h resolved
+  streams); concurrent requests share one fetch.
+
+### Limitations
+
+- Direct play only: virtual items aren't in the Jellyfin DB, so the transcoder can't serve them. TVs and
+  Android usually play HEVC/MKV natively; browsers may not.
+- Subtitles aren't exposed yet (they'd need DB-backed Jellyfin endpoints).
+- TorrServer must be reachable by clients (they're redirected to it) and without HTTP auth for now.
+- No watch progress for virtual items yet.
 
 Unhandled API routes for a virtual ID are logged as `TorrCatalog: unhandled virtual route …`.
 
@@ -33,13 +50,17 @@ DOCKER_CONTEXT=remote-builder docker compose -f docker/docker-compose.dev.yml up
 ```
 
 - Jellyfin: http://192.168.88.95:8096 (finish the setup wizard on first start)
-- `media`: nginx serving a generated 5-minute h264/aac test mp4 on :8090, used as the stand-in stream
-  for every catalog movie via `TORRCATALOG_DEV_STREAM_URL` (override with `DEV_STREAM_URL=...`).
+- TorrServer: http://192.168.88.95:8090 (`ghcr.io/yourok/torrserver:MatriX.145.2`, no auth in dev)
+- `media`: nginx serving a generated 5-minute h264/aac test mp4 on :8091, used as the stand-in stream
+  when no TorrServer URL is configured (`TORRCATALOG_DEV_STREAM_URL`, override with `DEV_STREAM_URL=...`).
+- Legal test torrent for TorrServer checks: Sintel (CC-BY), infohash `08ada5a7a6183aae1e09d831df6748d566095a10`.
 - Tests run during the image build (`dotnet test --solution Jellyfin.Plugin.TorrCatalog.slnx`);
   a failing test fails the build.
 
 Configure in Dashboard → Plugins → TorrCatalog: TMDB API key (v3 key or v4 read access token),
-language, region, sections. Sections are hidden until a key is set.
+language, region, sections (hidden until a key is set), Prowlarr URL + API key, TorrServer URL,
+release preferences. Each service has a Test button; "Search releases" shows the ranked list for a
+TMDB id with the scoring breakdown.
 
 ## Phase 1 manual check
 
@@ -51,8 +72,10 @@ language, region, sections. Sections are hidden until a key is set.
 
 ## Client compatibility
 
-| Client | Catalog | Playback (dev stream) |
-| --- | --- | --- |
-| Jellyfin Web 12.1 | pending | ✅ (spike) |
-| Jellyfin for Android 2.7.3 | pending | ✅ (spike) |
-| Samsung Tizen | pending | pending |
+| Client | Catalog | Playback (dev stream) | Playback (TorrServer) |
+| --- | --- | --- | --- |
+| Jellyfin Web 12.1 | pending | ✅ | pending |
+| Jellyfin for Android 2.7.3 | pending | ✅ | pending |
+| Samsung Tizen | pending | pending | pending |
+
+Catalog and torrent playback were confirmed working on 2026-10-06; which clients were used isn't recorded yet.

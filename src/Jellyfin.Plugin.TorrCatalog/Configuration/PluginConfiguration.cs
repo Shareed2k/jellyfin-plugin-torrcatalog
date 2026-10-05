@@ -35,6 +35,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets language codes in order of preference, e.g. "ru,en".</summary>
     public string PreferredLanguages { get; set; } = "ru,en";
 
+    /// <summary>Gets or sets the TorrServer base URL. Clients are redirected to it, so it must be reachable by them too.</summary>
+    public string TorrServerUrl { get; set; } = string.Empty;
+
+    public string TorrServerUsername { get; set; } = string.Empty;
+
+    public string TorrServerPassword { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets how long to wait for torrent metadata (file list) before trying the next release.</summary>
+    public int MetadataTimeoutSeconds { get; set; } = 45;
+
     /// <summary>Gets or sets title tags per language: "ru=RUS,RU,DUB;en=ENG,EN".</summary>
     public string LanguageAliases { get; set; } = "ru=RUS,RU,Russian,DUB,MVO,DVO,AVO,Дубляж,Дублированный;en=ENG,EN,English";
 

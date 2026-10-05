@@ -10,7 +10,7 @@ services:
     environment:
       # Stand-in stream for every catalog movie until TorrServer playback exists.
       # Must be reachable from clients (browser, TV), not just from the server.
-      TORRCATALOG_DEV_STREAM_URL: ${DEV_STREAM_URL:-http://192.168.88.95:8090/test.mp4}
+      TORRCATALOG_DEV_STREAM_URL: ${DEV_STREAM_URL:-http://192.168.88.95:8091/test.mp4}
     volumes:
       - config:/config
       - cache:/cache
@@ -19,8 +19,16 @@ services:
     build:
       context: ..
       dockerfile: docker/media.Dockerfile
-    ports: ["8090:80"]
+    ports: ["8091:80"]
+    restart: unless-stopped
+  torrserver:
+    image: ghcr.io/yourok/torrserver:MatriX.145.2
+    # No HTTP auth in dev (LAN only). Set TS_HTTPAUTH=1 + accs.db to protect it.
+    ports: ["8090:8090"]
+    volumes:
+      - torrserver:/opt/ts
     restart: unless-stopped
 volumes:
   config: {}
   cache: {}
+  torrserver: {}

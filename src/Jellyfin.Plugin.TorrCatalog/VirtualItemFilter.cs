@@ -1,4 +1,6 @@
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.TorrCatalog.Releases;
+using Jellyfin.Plugin.TorrCatalog.TorrServer;
 using MediaBrowser.Model.Dlna;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -18,7 +20,7 @@ namespace Jellyfin.Plugin.TorrCatalog;
 /// none of which exist in the library DB, and injects the sections into the user's library views.
 /// Unhandled routes for a virtual ID are logged so client compatibility gaps show up in the server log.
 /// </summary>
-public sealed class VirtualItemFilter(Catalog catalog, ILogger<VirtualItemFilter> logger) : IAsyncActionFilter
+public sealed class VirtualItemFilter(Catalog catalog, StreamResolver streams, ILogger<VirtualItemFilter> logger) : IAsyncActionFilter
 {
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
@@ -117,7 +119,9 @@ public sealed class VirtualItemFilter(Catalog catalog, ILogger<VirtualItemFilter
         switch (route)
         {
             case ("UserLibrary", "GetItem" or "GetItemLegacy"):
-                return new OkObjectResult(catalog.ToDto(await catalog.GetMovieAsync(tmdbId, ct)));
+                var details = catalog.ToDto(await catalog.GetMovieAsync(tmdbId, ct));
+                streams.WarmUp(tmdbId); // details page open: likely Play next, start the release search now
+                return new OkObjectResult(details);
 
             case ("Image", _):
                 var type = Arg<ImageType>(args, "imageType") ?? ImageType.Primary;
@@ -132,20 +136,36 @@ public sealed class VirtualItemFilter(Catalog catalog, ILogger<VirtualItemFilter
                 return url is null ? new NotFoundResult() : new RedirectResult(url);
 
             case ("MediaInfo", "GetPlaybackInfo" or "GetPostedPlaybackInfo"):
-                if (Catalog.DevStreamUrl is not { } stream)
+                // Resolution (search + torrent metadata + probe) happens here, so the client gets real
+                // container/codecs/tracks and the stream request below is just a cached redirect.
+                try
                 {
+                    var stream = await streams.ResolveMovieAsync(tmdbId, ct);
+                    var movie = await catalog.GetMovieAsync(tmdbId, ct);
+                    return new OkObjectResult(new PlaybackInfoResponse
+                    {
+                        MediaSources = [Catalog.MediaSource(guid, movie, stream, ReleaseScorer.Preferences.From(catalog.Config()).Languages)],
+                        PlaySessionId = Guid.NewGuid().ToString("N"),
+                    });
+                }
+                catch (Exception ex) when (ex is StreamNotFoundException or HttpRequestException or InvalidOperationException or TimeoutException)
+                {
+                    // Clients show "no compatible streams"; the real reason goes to the server log.
+                    logger.LogWarning("TorrCatalog: playback of TMDB {TmdbId} unavailable: {Error}", tmdbId, ex.Message);
                     return new OkObjectResult(new PlaybackInfoResponse { MediaSources = [], ErrorCode = PlaybackErrorCode.NoCompatibleStream });
                 }
 
-                var movie = await catalog.GetMovieAsync(tmdbId, ct);
-                return new OkObjectResult(new PlaybackInfoResponse
-                {
-                    MediaSources = [Catalog.MediaSource(guid, movie, stream)],
-                    PlaySessionId = Guid.NewGuid().ToString("N"),
-                });
-
             case ("Videos", "GetVideoStream" or "GetVideoStreamByContainer"):
-                return Catalog.DevStreamUrl is { } devUrl ? new RedirectResult(devUrl) : new NotFoundResult();
+                // Normally a cache hit from PlaybackInfo; resolves again if the cache expired.
+                try
+                {
+                    return new RedirectResult((await streams.ResolveMovieAsync(tmdbId, ct)).Url);
+                }
+                catch (StreamNotFoundException ex)
+                {
+                    logger.LogWarning("TorrCatalog: stream for TMDB {TmdbId} unavailable: {Error}", tmdbId, ex.Message);
+                    return new NotFoundResult();
+                }
 
             default:
                 return null;

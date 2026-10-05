@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.TorrCatalog.Configuration;
 using Jellyfin.Plugin.TorrCatalog.Tmdb;
+using Jellyfin.Plugin.TorrCatalog.TorrServer;
 using MediaBrowser.Controller;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -39,7 +40,7 @@ public sealed partial class Catalog
         _serverId = serverId;
     }
 
-    internal Func<PluginConfiguration> Config { get; init; } = () => Plugin.Instance?.Configuration ?? new PluginConfiguration();
+    public Func<PluginConfiguration> Config { get; init; } = () => Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
     /// <summary>Gets the dev-only stand-in stream until TorrServer playback lands (Phase 4).</summary>
     // ponytail: env var instead of config UI; removed when real stream resolution exists.
@@ -168,28 +169,61 @@ public sealed partial class Catalog
     public static UserItemDataDto UserData(Guid id) => new() { Key = id.ToString("N"), ItemId = id };
 
     /// <summary>Builds the playable source. Protocol=File on purpose: every client then requests
-    /// /Videos/{id}/stream, which the filter redirects. Protocol=Http breaks jellyfin-android (forces HLS).</summary>
-    public static MediaSourceInfo MediaSource(Guid id, TmdbMovie m, string url) => new()
+    /// /Videos/{id}/stream, which the filter redirects. Protocol=Http breaks jellyfin-android (forces HLS).
+    /// Direct play only: virtual items aren't in the DB, so Jellyfin's transcoder can't serve them.</summary>
+    public static MediaSourceInfo MediaSource(Guid id, TmdbMovie m, ResolvedStream stream, string[] preferredLanguages)
     {
-        Id = id.ToString("N"),
-        Name = m.Title,
-        Path = url,
-        Protocol = MediaProtocol.File,
-        Type = MediaSourceType.Default,
-        Container = "mp4",
-        IsRemote = false,
-        SupportsDirectPlay = true,
-        SupportsDirectStream = false,
-        SupportsTranscoding = false,
-        SupportsProbing = false,
-        RunTimeTicks = m.Runtime > 0 ? TimeSpan.FromMinutes(m.Runtime.Value).Ticks : null,
-        // ponytail: dev stream codecs are known (h264/aac test mp4); real values come from TorrServer in Phase 4.
-        MediaStreams =
-        [
-            new MediaStream { Index = 0, Type = MediaStreamType.Video, Codec = "h264", Width = 1920, Height = 1080, IsDefault = true },
-            new MediaStream { Index = 1, Type = MediaStreamType.Audio, Codec = "aac", Channels = 2, IsDefault = true },
-        ],
-    };
+        // Subtitle streams are left out for now: clients would fetch them via Jellyfin endpoints that need a DB item.
+        var streams = stream.Probe?.MediaStreams?.Where(s => s.Type is MediaStreamType.Video or MediaStreamType.Audio).ToArray() ?? [];
+        return new MediaSourceInfo
+        {
+            Id = id.ToString("N"),
+            Name = stream.ReleaseTitle,
+            Path = stream.Url,
+            Protocol = MediaProtocol.File,
+            Type = MediaSourceType.Default,
+            Container = stream.Container,
+            Size = stream.Size > 0 ? stream.Size : null,
+            IsRemote = false,
+            SupportsDirectPlay = true,
+            SupportsDirectStream = false,
+            SupportsTranscoding = false,
+            SupportsProbing = false,
+            RunTimeTicks = stream.Probe?.RunTimeTicks ?? (m.Runtime > 0 ? TimeSpan.FromMinutes(m.Runtime.Value).Ticks : null),
+            Bitrate = stream.Probe?.Bitrate,
+            MediaStreams = streams,
+            DefaultAudioStreamIndex = PreferredAudio(streams, preferredLanguages),
+        };
+    }
+
+    /// <summary>First audio track in the most preferred language (ffprobe reports ISO 639-2, e.g. "rus"), else the default one.</summary>
+    static int? PreferredAudio(MediaStream[] streams, string[] languages)
+    {
+        var audio = streams.Where(s => s.Type == MediaStreamType.Audio).ToArray();
+        foreach (var lang in languages)
+        {
+            var iso3 = Iso639_2(lang);
+            if (audio.FirstOrDefault(a => string.Equals(a.Language, iso3, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(a.Language, lang, StringComparison.OrdinalIgnoreCase)) is { } match)
+            {
+                return match.Index;
+            }
+        }
+
+        return (audio.FirstOrDefault(a => a.IsDefault) ?? audio.FirstOrDefault())?.Index;
+    }
+
+    static string Iso639_2(string twoLetter)
+    {
+        try
+        {
+            return CultureInfo.GetCultureInfo(twoLetter).ThreeLetterISOLanguageName;
+        }
+        catch (CultureNotFoundException)
+        {
+            return twoLetter;
+        }
+    }
 
     /// <summary>TMDB image path ("/abc.jpg") doubles as the Jellyfin image tag, so image requests need no TMDB lookup.</summary>
     public static string? ImageTag(string? tmdbPath) => tmdbPath?.TrimStart('/') is { Length: > 0 } t && SafeImageTag().IsMatch(t) ? t : null;

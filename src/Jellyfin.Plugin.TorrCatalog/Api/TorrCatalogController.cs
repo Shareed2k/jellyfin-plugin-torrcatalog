@@ -1,4 +1,5 @@
 using Jellyfin.Plugin.TorrCatalog.Releases;
+using Jellyfin.Plugin.TorrCatalog.TorrServer;
 using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -10,7 +11,7 @@ namespace Jellyfin.Plugin.TorrCatalog.Api;
 [ApiController]
 [Authorize]
 [Route("Plugins/TorrCatalog")]
-public class TorrCatalogController(Catalog catalog, ReleaseService releases, ProwlarrClient prowlarr, ILogger<TorrCatalogController> logger) : ControllerBase
+public class TorrCatalogController(Catalog catalog, ReleaseService releases, ProwlarrClient prowlarr, TorrServerClient torrServer, ILogger<TorrCatalogController> logger) : ControllerBase
 {
     /// <summary>Admin connectivity check used by the config page's test buttons.</summary>
     [HttpGet("Health")]
@@ -20,7 +21,8 @@ public class TorrCatalogController(Catalog catalog, ReleaseService releases, Pro
         var config = Plugin.Instance!.Configuration;
         return new HealthResponse(
             await Check(() => catalog.PingAsync(ct)),
-            await Check(() => prowlarr.PingAsync(config, ct)));
+            await Check(() => prowlarr.PingAsync(config, ct)),
+            await Check(() => torrServer.VersionAsync(config, ct)));
     }
 
     /// <summary>Ranked torrent releases for a TMDB movie. No download/magnet URLs are returned.</summary>
@@ -58,5 +60,5 @@ public class TorrCatalogController(Catalog catalog, ReleaseService releases, Pro
         }
     }
 
-    public sealed record HealthResponse(string Tmdb, string Prowlarr);
+    public sealed record HealthResponse(string Tmdb, string Prowlarr, string TorrServer);
 }
