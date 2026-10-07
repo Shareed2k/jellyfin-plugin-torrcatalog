@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Overridden by CI from the release tag (v1.2.3 -> 1.2.3.0); Jellyfin shows the 4-part version. -->
+    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

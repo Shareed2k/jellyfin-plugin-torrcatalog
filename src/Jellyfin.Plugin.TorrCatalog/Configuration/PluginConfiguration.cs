@@ -55,6 +55,9 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets the Jellyfin URL written into .strm files; must be reachable by Jellyfin and clients. Empty = http://localhost:{port}.</summary>
     public string StrmBaseUrl { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets a value indicating whether to shorten Jellyfin's ffprobe limits server-wide (see StrmProbeTuning).</summary>
+    public bool FastStrmProbing { get; set; }
+
     /// <summary>Gets or sets the secret in .strm URLs (Jellyfin's ffmpeg can't authenticate). Generated on first use.</summary>
     public string StreamKey { get; set; } = string.Empty;
 

@@ -40,6 +40,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<WatchState>();
         serviceCollection.AddSingleton<Persistence>();
         serviceCollection.AddSingleton<PlaybackNotifier>();
+        serviceCollection.AddHostedService<StrmProbeTuning>();
 
         // Plugin services share the ASP.NET container, so a global MVC filter sees every API action.
         serviceCollection.AddSingleton<VirtualItemFilter>();

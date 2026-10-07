@@ -95,6 +95,15 @@
                         <input id="StrmBaseUrl" type="url" is="emby-input" placeholder="http://192.168.1.10:8096" />
                         <div class="fieldDescription">Must be reachable by Jellyfin itself and by clients. Empty = http://localhost:&lt;port&gt; (server-side only).</div>
                     </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="FastStrmProbing" type="checkbox" is="emby-checkbox" />
+                            <span>Fast ffprobe (needed for the fallback)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">Jellyfin probes .strm targets for up to 200 s of video,
+                            minutes on a torrent. This lowers the limits to 5 s / 50 MB for the whole server (all libraries),
+                            same as JELLYFIN_FFmpeg__analyzeduration=5M and JELLYFIN_FFmpeg__probesize=50M.</div>
+                    </div>
 
                     <h2>Release preferences</h2>
                     <div class="inputContainer">
@@ -208,6 +217,7 @@
                         page.querySelector('#Language').value = config.Language || '';
                         page.querySelector('#Region').value = config.Region || '';
                         page.querySelector('#IncludeAdult').checked = !!config.IncludeAdult;
+                        page.querySelector('#FastStrmProbing').checked = !!config.FastStrmProbing;
                         fields.forEach(function (f) { page.querySelector('#' + f).value = config[f] == null ? '' : config[f]; });
                         tbody.innerHTML = '';
                         (config.Sections || []).forEach(addRow);
@@ -225,6 +235,7 @@
                         config.Language = page.querySelector('#Language').value.trim() || 'en-US';
                         config.Region = page.querySelector('#Region').value.trim();
                         config.IncludeAdult = page.querySelector('#IncludeAdult').checked;
+                        config.FastStrmProbing = page.querySelector('#FastStrmProbing').checked;
                         config.Sections = readRows();
                         fields.forEach(function (f) {
                             var el = page.querySelector('#' + f);

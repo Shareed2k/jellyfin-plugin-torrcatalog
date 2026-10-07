@@ -1,0 +1,91 @@
+# Every push/PR: tests + build. A tag v1.2.3: zip the plugin, attach it to a GitHub release and add the
+# version to the Jellyfin repository manifest on the gh-pages branch:
+#   https://raw.githubusercontent.com/<owner>/<repo>/gh-pages/manifest.json
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+env:
+  TARGET_ABI: "12.1.0.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # changelog = commits since the previous tag
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        run: dotnet test --solution Jellyfin.Plugin.TorrCatalog.slnx
+
+      - name: Version
+        id: version
+        run: |
+          v=0.0.0.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && v="$v.0"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet publish src/Jellyfin.Plugin.TorrCatalog -c Release -o publish -p:Version="$VERSION"
+
+      - name: Package
+        id: package
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          zip="torrcatalog_${VERSION}.zip"
+          zip -j "$zip" publish/Jellyfin.Plugin.TorrCatalog.dll
+          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          git log --pretty='- %s' "${prev:+$prev..}$GITHUB_REF_NAME" > changelog.md
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "md5=$(md5sum "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: ${{ steps.package.outputs.zip }}
+          body_path: changelog.md
+
+      - name: Update repository manifest
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ZIP: ${{ steps.package.outputs.zip }}
+          MD5: ${{ steps.package.outputs.md5 }}
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch origin gh-pages:gh-pages
+            git worktree add pages gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+          python3 .github/scripts/update_manifest.py \
+            --manifest pages/manifest.json \
+            --version "$VERSION" \
+            --target-abi "$TARGET_ABI" \
+            --source-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}" \
+            --checksum "$MD5" \
+            --changelog "$(cat changelog.md)"
+          cd pages
+          git add manifest.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Release ${GITHUB_REF_NAME}"
+          git push origin gh-pages

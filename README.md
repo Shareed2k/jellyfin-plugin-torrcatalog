@@ -54,6 +54,20 @@ Status: Phases 0-7 of the plan (no Home Screen Sections: the native "Latest" row
 
 Unhandled API routes for a virtual ID are logged as `TorrCatalog: unhandled virtual route …`.
 
+## Install
+
+Requires Jellyfin 12.1.x, plus running Prowlarr and TorrServer (MatriX, reachable by clients, no HTTP auth).
+
+1. Dashboard → Plugins → Repositories → add
+   `https://raw.githubusercontent.com/Shareed2k/jellyfin-plugin-torrcatalog/gh-pages/manifest.json`.
+2. Catalog → TorrCatalog → Install, then restart Jellyfin.
+3. Plugin settings: TMDB key, Prowlarr URL + key, TorrServer URL; for browser transcoding also the
+   fallback library folder (e.g. `/config/torrcatalog-library`), the Jellyfin LAN URL and "Fast ffprobe".
+   Use the Test buttons.
+
+Releases: push a tag `vX.Y.Z`; the Build workflow runs the tests, attaches `torrcatalog_X.Y.Z.0.zip` to a
+GitHub release and adds the version to `manifest.json` on the `gh-pages` branch.
+
 ## Development
 
 No local .NET SDK needed; everything builds in Docker. The dev compose targets a remote docker host
