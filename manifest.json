@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "4f0c6a3e-9b8d-4c52-a1f7-3e2d5b6c7a81",
+    "name": "TorrCatalog",
+    "overview": "TMDB catalogs as virtual libraries, played from torrents via Prowlarr and TorrServer",
+    "description": "Shows TMDB catalogs (trending, new releases, TV, ...) as virtual movie and TV libraries and plays them through Prowlarr + TorrServer, with a release picker, watch progress and a transcoding fallback. Requires running Prowlarr and TorrServer instances.",
+    "owner": "Shareed2k",
+    "category": "General",
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "- Add release CI with a Jellyfin plugin repository manifest",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Shareed2k/jellyfin-plugin-torrcatalog/releases/download/v0.1.0/torrcatalog_0.1.0.0.zip",
+        "checksum": "c43bb2f44ab956d5ecec8013b3d6784c",
+        "timestamp": "2026-10-07T05:34:29Z"
+      }
+    ]
+  }
+]
