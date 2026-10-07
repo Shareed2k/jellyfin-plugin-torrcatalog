@@ -8,14 +8,21 @@ internal static class MemoryCacheExtensions
     /// Caches the in-flight task, so concurrent callers share one upstream request; failures are evicted.
     /// The fetch must not use the caller's token (other callers share it); callers stop waiting via WaitAsync.
     /// </summary>
-    // ponytail: GetOrCreate isn't atomic, a rare race can issue a duplicate request. Keyed lock if that matters.
+    // GetOrCreate alone isn't atomic: a details page and /Items?ids= arriving together did start the same
+    // Prowlarr search twice. The lock only covers the in-memory lookup (the fetch runs outside it).
+    static readonly Lock CreateLock = new();
+
     public static async Task<T> GetOrFetchAsync<T>(this IMemoryCache cache, string key, TimeSpan ttl, Func<Task<T>> fetch, CancellationToken ct)
     {
-        var lazy = cache.GetOrCreate(key, e =>
+        Lazy<Task<T>> lazy;
+        lock (CreateLock)
         {
-            e.AbsoluteExpirationRelativeToNow = ttl;
-            return new Lazy<Task<T>>(fetch);
-        })!;
+            lazy = cache.GetOrCreate(key, e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = ttl;
+                return new Lazy<Task<T>>(fetch);
+            })!;
+        }
 
         try
         {

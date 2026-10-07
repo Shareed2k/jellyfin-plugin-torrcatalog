@@ -31,12 +31,13 @@ public sealed partial class TorrServerClient(IHttpClientFactory httpClientFactor
     }
 
     /// <summary>Polls until the torrent's file list is known. Throws TimeoutException if it doesn't arrive in time.</summary>
-    public async Task<TorrentStatus> WaitForFilesAsync(PluginConfiguration config, string hash, TimeSpan timeout, CancellationToken ct)
+    public async Task<TorrentStatus> WaitForFilesAsync(PluginConfiguration config, string hash, TimeSpan timeout, CancellationToken ct, Action<TorrentStatus>? onPoll = null)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (true)
         {
             var status = await GetAsync(config, hash, ct).ConfigureAwait(false);
+            onPoll?.Invoke(status);
             if (status.FileStats is { Length: > 0 })
             {
                 return status;
@@ -120,7 +121,17 @@ public sealed partial class TorrServerClient(IHttpClientFactory httpClientFactor
 }
 
 /// <summary>Subset of TorrServer's TorrentStatus. Most fields are omitempty, hence nullable.</summary>
-public sealed record TorrentStatus(string? Hash, int Stat, string? StatString, string? Title, TorrentFile[]? FileStats);
+public sealed record TorrentStatus(
+    string? Hash,
+    int Stat,
+    string? StatString,
+    string? Title,
+    TorrentFile[]? FileStats,
+    long? LoadedSize = null,
+    long? PreloadedBytes = null,
+    double? DownloadSpeed = null,
+    int? ActivePeers = null,
+    int? ConnectedSeeders = null);
 
 /// <summary>A file inside a torrent. Id is 1-based and is what /stream?index= expects.</summary>
 public sealed record TorrentFile(int Id, string Path, long Length);

@@ -1,42 +1,56 @@
 # Jellyfin TorrCatalog
 
-Jellyfin 12.1 server plugin that shows TMDB catalogs (Trending, New Releases, Popular, …) as virtual
-movie libraries. Items don't exist in the Jellyfin library DB: a global MVC filter answers the Jellyfin
-API calls for their IDs, so every client (Web, Android, Android TV, Samsung Tizen) shows them natively,
-including "Latest in <section>" rows on Home.
+Jellyfin 12.1 server plugin that shows TMDB catalogs (Trending, New Releases, Popular, TV, …) as virtual
+movie and TV libraries and plays them from torrents (Prowlarr + TorrServer). Items don't exist in the
+Jellyfin library DB: a global MVC filter answers the Jellyfin API calls for their IDs, so every client
+(Web, Android, Android TV, Samsung Tizen) shows them natively, including "Latest in <section>" rows on Home.
 
-Status: Phase 4 MVP. Catalog (TMDB), release search (Prowlarr) and torrent playback (TorrServer) work
-for movies. Next: manual release picker, TV shows, persistence.
+Status: Phases 0-7 of the plan (no Home Screen Sections: the native "Latest" rows cover it).
 
 ## How it works
 
-- **IDs**: `VirtualId` packs a magic prefix + kind + TMDB id into the Guid, so an ID decodes straight back
-  to its TMDB id. No mapping table, IDs survive restarts.
-- **Sections**: each enabled section in the plugin config becomes a `CollectionFolder` (`movies`) appended
-  to `/UserViews`; `/Items?parentId=` and `/Items/Latest?parentId=` page through the TMDB list.
+- **IDs**: `VirtualId` packs a magic prefix + kind + TMDB id (+ season, episode, release pin) into the
+  Guid, so an ID decodes straight back. No mapping table, IDs survive restarts.
+- **Sections**: each enabled section becomes a `CollectionFolder` (`movies`, or `tvshows` when its TMDB path
+  has a `tv` segment) appended to `/UserViews`; `/Items?parentId=` and `/Items/Latest` page through TMDB.
+- **TV**: series → seasons → episodes (`/Shows/{id}/Seasons|Episodes|NextUp`, `parentId` browsing);
+  unaired episodes show as missing.
 - **Items**: `/Items/{id}`, images (302 to image.tmdb.org; the TMDB image path is the image tag),
-  `/Items?ids=`, and empties for intros/trailers/similar/theme media/segments.
-- **Search**: TMDB movie matches are appended to Jellyfin's own `/Items?searchTerm=` results.
-- **Releases**: Prowlarr is searched by IMDb/TMDB id plus localized and original title + year, results
-  are merged by infohash, parsed (resolution, source, codec, HDR, audio, language incl. RuTracker
-  `D, P, A` codes) and scored with an explanation per point. Clients never see magnet/download URLs.
-- **Playback**: `PlaybackInfo` resolves the movie: best positive-scored release → TorrServer → wait for
-  metadata → largest non-junk video file → ffprobe (real codecs/audio tracks, preferred-language audio as
-  default). A release that times out or has no video is dropped and the next one is tried (max 3).
-  Media sources are declared `Protocol=File`, so every client requests `/Videos/{id}/stream`, which is
-  redirected (302) to TorrServer's `/stream` (Range/seek supported). `Protocol=Http` breaks
-  jellyfin-android (its ExoPlayer assumes HLS for Http sources). Opening a details page starts the
-  release search in the background so Play doesn't wait for Prowlarr.
-- **Cache**: in-memory (30 min sections and release searches, 24 h details, 15 min search, 6 h resolved
-  streams); concurrent requests share one fetch.
+  `/Items?ids=`, and empties for intros/trailers/similar/theme media/segments/filters.
+- **Search**: TMDB movie and TV matches are appended to Jellyfin's own `/Items?searchTerm=` results.
+- **Releases**: Prowlarr is searched by ids plus localized and original titles (movies: + year; TV: per
+  season, so packs are found). Results must match the item (indexer id or the title as whole words), are
+  merged by infohash, parsed (resolution, source incl. CAM/TS/TC rips, codec, HDR, audio, language incl.
+  RuTracker `D, P, A` codes, seasons/episode ranges) and scored with an explanation per point.
+  Clients never see magnet/download URLs.
+- **Versions** (release picker): details pages list "Auto" plus the top releases as native Jellyfin
+  versions (`MediaSources`; low-quality CAM/TS ones marked ⚠). A pick on an episode is reused for the rest
+  of that season.
+- **Playback**: `PlaybackInfo` resolves the item: release → TorrServer → wait for metadata → video file
+  (largest for movies; the right SxxEyy/numbered file in packs) → ffprobe (codecs, audio tracks,
+  preferred-language default). Auto checks the client's `DeviceProfile` and skips releases it can't direct
+  play; falls back to the next release (max 3) and, with nothing better, to a live CAM/TS with a warning.
+  Media sources are `Protocol=File`, so clients request `/Videos/{id}/stream`, which redirects (302) to
+  TorrServer (`Protocol=Http` breaks jellyfin-android's ExoPlayer).
+- **Fallback library (transcoding)**: when a client can't direct play the chosen release (typically a
+  browser and HEVC/AC3), the item is written as `.strm` into auto-created "TorrCatalog Movies/Shows"
+  libraries and the `PlaybackInfo` call is handed to Jellyfin, which transcodes. The `.strm` points at
+  `/Plugins/TorrCatalog/Stream/{id}?key=…` (anonymous for Jellyfin's ffmpeg, guarded by a generated key).
+- **Watch progress**: per user in `watch-state.json` (plugin data folder): progress bars, resume,
+  "Continue watching", played marks, next up. Jellyfin's resume thresholds (5% / 90%).
+- **Status toasts**: while preparing playback, the client gets DisplayMessage toasts (searching, starting,
+  peers, MB buffered and speed, warnings, failure reasons). Needs the client's websocket session.
+- **Cache**: in-memory (30 min sections and release searches, 24 h details, 6 h started streams);
+  concurrent requests share one fetch.
 
 ### Limitations
 
-- Direct play only: virtual items aren't in the Jellyfin DB, so the transcoder can't serve them. TVs and
-  Android usually play HEVC/MKV natively; browsers may not.
-- Subtitles aren't exposed yet (they'd need DB-backed Jellyfin endpoints).
+- Virtual items play directly; transcoding only through the fallback library (slower start: Jellyfin
+  re-probes `.strm` items on every play).
+- Subtitles aren't exposed for virtual playback yet.
 - TorrServer must be reachable by clients (they're redirected to it) and without HTTP auth for now.
-- No watch progress for virtual items yet.
+- Favorites on virtual items aren't stored.
+- Status toasts don't reach clients without a live websocket (seen with Jellyfin for Tizen).
 
 Unhandled API routes for a virtual ID are logged as `TorrCatalog: unhandled virtual route …`.
 
@@ -62,7 +76,7 @@ language, region, sections (hidden until a key is set), Prowlarr URL + API key, 
 release preferences. Each service has a Test button; "Search releases" shows the ranked list for a
 TMDB id with the scoring breakdown.
 
-## Phase 1 manual check
+## Manual check
 
 1. Set the TMDB key, press **Test TMDB**, save.
 2. Home shows the section libraries and "Latest in Trending / New Releases / Popular" rows.
@@ -74,8 +88,8 @@ TMDB id with the scoring breakdown.
 
 | Client | Catalog | Playback (dev stream) | Playback (TorrServer) |
 | --- | --- | --- | --- |
-| Jellyfin Web 12.1 | pending | ✅ | pending |
-| Jellyfin for Android 2.7.3 | pending | ✅ | pending |
+| Jellyfin Web 12.1 (Chrome, macOS) | ✅ | ✅ | ✅ |
+| Jellyfin for Android 2.7.3 | ✅ | ✅ | ✅ |
 | Samsung Tizen | pending | pending | pending |
 
-Catalog and torrent playback were confirmed working on 2026-10-06; which clients were used isn't recorded yet.
+Verified 2026-10-06.

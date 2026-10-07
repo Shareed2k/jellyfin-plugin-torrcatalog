@@ -63,7 +63,7 @@ public sealed partial class TmdbClient(IHttpClientFactory httpClientFactory)
     private static partial Regex SafePath();
 }
 
-public sealed record TmdbPage(int Page, int TotalPages, int TotalResults, TmdbMovie[] Results);
+public sealed record TmdbPage<T>(int Page, int TotalPages, int TotalResults, T[] Results);
 
 public sealed record TmdbMovie(
     int Id,
@@ -81,3 +81,26 @@ public sealed record TmdbMovie(
     TmdbGenre[]? Genres = null);
 
 public sealed record TmdbGenre(int Id, string Name);
+
+public sealed record TmdbShow(
+    int Id,
+    string? Name,
+    string? OriginalName,
+    string? Overview,
+    string? PosterPath,
+    string? BackdropPath,
+    string? FirstAirDate,
+    double VoteAverage,
+    int VoteCount,
+    TmdbGenre[]? Genres = null,
+    TmdbSeasonInfo[]? Seasons = null,
+    int[]? EpisodeRunTime = null,
+    TmdbExternalIds? ExternalIds = null);
+
+public sealed record TmdbSeasonInfo(int SeasonNumber, string? Name, string? PosterPath, string? AirDate, int EpisodeCount);
+
+public sealed record TmdbSeason(int SeasonNumber, string? Name, string? Overview, string? PosterPath, string? AirDate, TmdbEpisode[] Episodes);
+
+public sealed record TmdbEpisode(int EpisodeNumber, int SeasonNumber, string? Name, string? Overview, string? StillPath, string? AirDate, int? Runtime, double VoteAverage);
+
+public sealed record TmdbExternalIds(string? ImdbId, int? TvdbId);

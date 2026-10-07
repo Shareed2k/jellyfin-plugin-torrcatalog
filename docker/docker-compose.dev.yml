@@ -11,6 +11,10 @@ services:
       # Stand-in stream for every catalog movie until TorrServer playback exists.
       # Must be reachable from clients (browser, TV), not just from the server.
       TORRCATALOG_DEV_STREAM_URL: ${DEV_STREAM_URL:-http://192.168.88.95:8091/test.mp4}
+      # Jellyfin probes .strm targets (the Phase 7 fallback) with -analyzeduration 200M / -probesize 1G by
+      # default: on a torrent that's minutes of download before playback. Note: applies to all libraries.
+      JELLYFIN_FFmpeg__analyzeduration: "5M"
+      JELLYFIN_FFmpeg__probesize: "50M"
     volumes:
       - config:/config
       - cache:/cache

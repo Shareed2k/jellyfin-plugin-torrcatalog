@@ -37,6 +37,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
         serviceCollection.AddSingleton<TorrServerClient>();
         serviceCollection.AddSingleton<StreamResolver>();
+        serviceCollection.AddSingleton<WatchState>();
+        serviceCollection.AddSingleton<Persistence>();
+        serviceCollection.AddSingleton<PlaybackNotifier>();
 
         // Plugin services share the ASP.NET container, so a global MVC filter sees every API action.
         serviceCollection.AddSingleton<VirtualItemFilter>();

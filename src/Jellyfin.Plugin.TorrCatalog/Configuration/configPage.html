@@ -77,6 +77,25 @@
                         <span id="TestTorrServerResult" style="margin-left:1em"></span>
                     </div>
 
+                    <div style="margin:1em 0">
+                        <button is="emby-button" type="button" id="TestStatus" class="raised emby-button"><span>Test status message</span></button>
+                        <span id="TestStatusResult" style="margin-left:1em"></span>
+                    </div>
+
+                    <h2>Fallback library (transcoding)</h2>
+                    <div class="fieldDescription">Virtual items can only be direct played. When a client can't play any release
+                        (e.g. a browser and HEVC/AC3), the item is written as a .strm into a "TorrCatalog Movies/Shows" library
+                        and Jellyfin plays it, transcoding if needed. Leave the path empty to disable.</div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PersistencePath">Library folder</label>
+                        <input id="PersistencePath" type="text" is="emby-input" placeholder="/config/torrcatalog-library" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="StrmBaseUrl">Jellyfin URL for .strm files</label>
+                        <input id="StrmBaseUrl" type="url" is="emby-input" placeholder="http://192.168.1.10:8096" />
+                        <div class="fieldDescription">Must be reachable by Jellyfin itself and by clients. Empty = http://localhost:&lt;port&gt; (server-side only).</div>
+                    </div>
+
                     <h2>Release preferences</h2>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="MaxResolution">Max resolution</label>
@@ -139,7 +158,7 @@
                 var page = document.querySelector('#TorrCatalogConfigPage');
                 var tbody = page.querySelector('#Sections');
                 // Simple scalar settings mapped 1:1 between input id and config property.
-                var fields = ['ProwlarrUrl', 'ProwlarrApiKey', 'SearchTimeoutSeconds', 'TorrServerUrl', 'TorrServerUsername', 'TorrServerPassword', 'MetadataTimeoutSeconds', 'MaxResolution', 'MinSeeders', 'MaxSizeGb', 'PreferredLanguages', 'LanguageAliases'];
+                var fields = ['ProwlarrUrl', 'ProwlarrApiKey', 'SearchTimeoutSeconds', 'TorrServerUrl', 'TorrServerUsername', 'TorrServerPassword', 'MetadataTimeoutSeconds', 'PersistencePath', 'StrmBaseUrl', 'MaxResolution', 'MinSeeders', 'MaxSizeGb', 'PreferredLanguages', 'LanguageAliases'];
 
                 function cell(content) {
                     var td = document.createElement('td');
@@ -226,6 +245,12 @@
 
                 page.querySelector('#TestTorrServer').addEventListener('click', function () {
                     health('TorrServer', page.querySelector('#TestTorrServerResult'));
+                });
+
+                page.querySelector('#TestStatus').addEventListener('click', function () {
+                    var out = page.querySelector('#TestStatusResult');
+                    ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Plugins/TorrCatalog/TestStatus'), dataType: 'json' })
+                        .then(function (r) { out.textContent = r; }, function () { out.textContent = 'Request failed'; });
                 });
 
                 page.querySelector('#TestProwlarr').addEventListener('click', function () {

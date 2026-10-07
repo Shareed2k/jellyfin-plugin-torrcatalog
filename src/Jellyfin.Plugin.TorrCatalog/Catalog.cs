@@ -13,7 +13,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Jellyfin.Plugin.TorrCatalog;
 
-/// <summary>TMDB-backed catalog: sections, movie details and search, mapped to Jellyfin DTOs and cached in memory.</summary>
+/// <summary>TMDB-backed catalog: sections, movies, shows and search, mapped to Jellyfin DTOs and cached in memory. TV parts live in Catalog.Tv.cs.</summary>
 public sealed partial class Catalog
 {
     // ponytail: sections stop at 10 TMDB pages; raise if users actually scroll that far.
@@ -53,26 +53,34 @@ public sealed partial class Catalog
 
     public CatalogSection? FindSection(VirtualId id) => Sections.FirstOrDefault(s => VirtualId.Section(s.Id) == id);
 
-    public async Task<(BaseItemDto[] Items, int Total)> GetSectionItemsAsync(CatalogSection section, int start, int limit, CancellationToken ct)
+    /// <summary>TV sections are recognised by a "tv" path segment, e.g. "trending/tv/week", "tv/popular", "discover/tv".</summary>
+    public static bool IsTv(CatalogSection section) => section.Path.Split('/').Contains("tv");
+
+    public Task<(BaseItemDto[] Items, int Total)> GetSectionItemsAsync(CatalogSection section, int start, int limit, CancellationToken ct) =>
+        IsTv(section)
+            ? PageThroughAsync<TmdbShow>(section, start, limit, ToDto, ct)
+            : PageThroughAsync<TmdbMovie>(section, start, limit, ToDto, ct);
+
+    async Task<(BaseItemDto[] Items, int Total)> PageThroughAsync<T>(CatalogSection section, int start, int limit, Func<T, BaseItemDto> map, CancellationToken ct)
     {
         start = Math.Max(0, start);
         var end = Math.Min(start + Math.Max(0, limit), MaxSectionItems);
         var firstPage = (start / TmdbPageSize) + 1;
-        var movies = new List<TmdbMovie>();
+        var results = new List<T>();
         var total = 0;
 
         for (var page = firstPage; (page - 1) * TmdbPageSize < Math.Max(end, start + 1); page++)
         {
-            var p = await GetPageAsync(section, page, ct).ConfigureAwait(false);
+            var p = await GetPageAsync<T>(section, page, ct).ConfigureAwait(false);
             total = Math.Min(p.TotalResults, MaxSectionItems);
-            movies.AddRange(p.Results);
+            results.AddRange(p.Results);
             if (page >= p.TotalPages)
             {
                 break;
             }
         }
 
-        var items = movies.Skip(start - ((firstPage - 1) * TmdbPageSize)).Take(Math.Max(0, end - start)).Select(ToDto).ToArray();
+        var items = results.Skip(start - ((firstPage - 1) * TmdbPageSize)).Take(Math.Max(0, end - start)).Select(map).ToArray();
         return (items, total);
     }
 
@@ -83,30 +91,38 @@ public sealed partial class Catalog
             () => _tmdb.GetAsync<TmdbMovie>(cfg, $"movie/{tmdbId}", string.Empty, CancellationToken.None), ct).ConfigureAwait(false);
     }
 
-    public async Task<BaseItemDto[]> SearchAsync(string term, int limit, CancellationToken ct)
+    public async Task<BaseItemDto[]> SearchMoviesAsync(string term, int limit, CancellationToken ct) =>
+        (await SearchAsync<TmdbMovie>("search/movie", term, ct).ConfigureAwait(false)).Take(limit).Select(ToDto).ToArray();
+
+    public async Task<BaseItemDto[]> SearchShowsAsync(string term, int limit, CancellationToken ct) =>
+        (await SearchAsync<TmdbShow>("search/tv", term, ct).ConfigureAwait(false)).Take(limit).Select(ToDto).ToArray();
+
+    async Task<T[]> SearchAsync<T>(string path, string term, CancellationToken ct)
     {
         var cfg = Config();
         term = term.Trim();
-        var page = await _cache.GetOrFetchAsync($"search:{cfg.Language}:{term.ToLowerInvariant()}", SearchTtl,
-            () => _tmdb.GetAsync<TmdbPage>(cfg, "search/movie", "query=" + Uri.EscapeDataString(term), CancellationToken.None), ct).ConfigureAwait(false);
-        return page.Results.Take(limit).Select(ToDto).ToArray();
+        var page = await _cache.GetOrFetchAsync($"{path}:{cfg.Language}:{term.ToLowerInvariant()}", SearchTtl,
+            () => _tmdb.GetAsync<TmdbPage<T>>(cfg, path, "query=" + Uri.EscapeDataString(term), CancellationToken.None), ct).ConfigureAwait(false);
+        return page.Results;
     }
 
     public Task PingAsync(CancellationToken ct) => _tmdb.GetAsync<JsonElement>(Config(), "configuration", string.Empty, ct);
 
-    Task<TmdbPage> GetPageAsync(CatalogSection section, int page, CancellationToken ct)
+    Task<TmdbPage<T>> GetPageAsync<T>(CatalogSection section, int page, CancellationToken ct)
     {
         var cfg = Config();
         var query = section.Query.Length > 0 ? $"{section.Query}&page={page}" : $"page={page}";
         return _cache.GetOrFetchAsync($"section:{cfg.Language}:{cfg.Region}:{cfg.IncludeAdult}:{section.Path}?{query}", SectionTtl,
-            () => _tmdb.GetAsync<TmdbPage>(cfg, section.Path, query, CancellationToken.None), ct);
+            () => _tmdb.GetAsync<TmdbPage<T>>(cfg, section.Path, query, CancellationToken.None), ct);
     }
+
+    static DateTime? Date(string? yyyyMmDd) => DateTime.TryParseExact(yyyyMmDd, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
 
     public BaseItemDto ToDto(TmdbMovie m)
     {
         var id = VirtualId.Movie(m.Id).ToGuid();
-        DateTime? released = DateTime.TryParseExact(m.ReleaseDate, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d) ? d : null;
+        var released = Date(m.ReleaseDate);
 
         var providerIds = new Dictionary<string, string> { ["Tmdb"] = m.Id.ToString(CultureInfo.InvariantCulture) };
         if (!string.IsNullOrEmpty(m.ImdbId))
@@ -156,7 +172,7 @@ public sealed partial class Catalog
             ServerId = _serverId,
             Name = s.Name,
             Type = BaseItemKind.CollectionFolder,
-            CollectionType = CollectionType.movies,
+            CollectionType = IsTv(s) ? CollectionType.tvshows : CollectionType.movies,
             IsFolder = true,
             LocationType = LocationType.FileSystem,
             DisplayPreferencesId = id.ToString("N"),
@@ -171,7 +187,7 @@ public sealed partial class Catalog
     /// <summary>Builds the playable source. Protocol=File on purpose: every client then requests
     /// /Videos/{id}/stream, which the filter redirects. Protocol=Http breaks jellyfin-android (forces HLS).
     /// Direct play only: virtual items aren't in the DB, so Jellyfin's transcoder can't serve them.</summary>
-    public static MediaSourceInfo MediaSource(Guid id, TmdbMovie m, ResolvedStream stream, string[] preferredLanguages)
+    public static MediaSourceInfo MediaSource(Guid id, long? runtimeTicks, ResolvedStream stream, string[] preferredLanguages)
     {
         // Subtitle streams are left out for now: clients would fetch them via Jellyfin endpoints that need a DB item.
         var streams = stream.Probe?.MediaStreams?.Where(s => s.Type is MediaStreamType.Video or MediaStreamType.Audio).ToArray() ?? [];
@@ -189,7 +205,7 @@ public sealed partial class Catalog
             SupportsDirectStream = false,
             SupportsTranscoding = false,
             SupportsProbing = false,
-            RunTimeTicks = stream.Probe?.RunTimeTicks ?? (m.Runtime > 0 ? TimeSpan.FromMinutes(m.Runtime.Value).Ticks : null),
+            RunTimeTicks = stream.Probe?.RunTimeTicks ?? runtimeTicks,
             Bitrate = stream.Probe?.Bitrate,
             MediaStreams = streams,
             DefaultAudioStreamIndex = PreferredAudio(streams, preferredLanguages),

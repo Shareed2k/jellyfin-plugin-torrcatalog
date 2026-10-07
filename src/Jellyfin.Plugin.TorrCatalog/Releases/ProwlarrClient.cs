@@ -9,14 +9,13 @@ public sealed class ProwlarrClient(IHttpClientFactory httpClientFactory)
 {
     public const string HttpClientName = "TorrCatalog.Prowlarr";
 
-    const int MoviesCategory = 2000;
-
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    /// <param name="type">"movie" for ID search ({ImdbId:..}{TmdbId:..} tokens in the query), "search" for free text.</param>
-    public async Task<ProwlarrRelease[]> SearchAsync(PluginConfiguration config, string type, string query, CancellationToken ct)
+    /// <param name="type">"movie"/"tvsearch" for ID search ({ImdbId:..}{TmdbId:..}{Season:..} tokens in the query), "search" for free text.</param>
+    /// <param name="category">Newznab category: 2000 movies, 5000 TV.</param>
+    public async Task<ProwlarrRelease[]> SearchAsync(PluginConfiguration config, string type, string query, int category, CancellationToken ct)
     {
-        var path = $"api/v1/search?type={type}&categories={MoviesCategory}&limit=100&query={Uri.EscapeDataString(query)}";
+        var path = $"api/v1/search?type={type}&categories={category}&limit=100&query={Uri.EscapeDataString(query)}";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(config.SearchTimeoutSeconds, 5, 120)));
         try
@@ -77,4 +76,7 @@ public sealed record ProwlarrRelease(
     string? MagnetUrl,
     string? DownloadUrl,
     string? InfoHash,
-    DateTime? PublishDate);
+    DateTime? PublishDate,
+    int ImdbId = 0,
+    int TmdbId = 0,
+    int TvdbId = 0);

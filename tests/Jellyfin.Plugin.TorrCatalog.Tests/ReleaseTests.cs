@@ -37,6 +37,9 @@ public class ReleaseTests
     [InlineData("Movie.2026.1080p.WEB-Rip.x264", 1080, ReleaseSource.WebRip, VideoCodec.H264)]
     [InlineData("Movie 2026 WEB-DLRip 720p", 720, ReleaseSource.WebRip, VideoCodec.Unknown)]
     [InlineData("Movie.2026.CAM.XViD", 0, ReleaseSource.Cam, VideoCodec.Xvid)]
+    [InlineData("Вышка 2 / Fall 2: Deadpoint (2026) TSRip [H.264] [AD]", 0, ReleaseSource.Telesync, VideoCodec.H264)]
+    [InlineData("Movie (2026) TS-Rip 720p", 720, ReleaseSource.Telesync, VideoCodec.Unknown)]
+    [InlineData("Movie (2026) CAM-Rip", 0, ReleaseSource.Cam, VideoCodec.Unknown)]
     [InlineData("Movie.2026.HDCAM.1080p.WEB.x264", 1080, ReleaseSource.Cam, VideoCodec.H264)]
     [InlineData("Movie.2026.1080p.BluRay.REMUX.AVC", 1080, ReleaseSource.Remux, VideoCodec.H264)]
     [InlineData("Movie.2026.DVDRip.XviD", 480, ReleaseSource.Dvd, VideoCodec.Xvid)]
@@ -62,7 +65,7 @@ public class ReleaseTests
     {
         var r = P("Show.S01E04.2160p.WEB-DL");
 
-        Assert.Equal(1, r.Season);
+        Assert.Equal([1], r.Seasons);
         Assert.Equal(4, r.Episode);
         Assert.Equal(2160, r.Resolution);
     }
@@ -176,4 +179,36 @@ public class ReleaseTests
         Assert.Contains("ru +30", reasons);
         Assert.Contains("15 seeds +40", reasons);
     }
+
+    [Theory]
+    [InlineData("Show.S02.1080p.WEB-DL", new[] { 2 }, null, null, null)]
+    [InlineData("Show.S01-S03.Complete.1080p", new[] { 1, 2, 3 }, null, null, null)]
+    [InlineData("Show.S01E01-E08.1080p", new[] { 1 }, null, 1, 8)]
+    [InlineData("Игра престолов / Game of Thrones / Сезон: 3 / Серии: 1-10 из 10 [2013, BDRip 1080p]", new[] { 3 }, null, 1, 10)]
+    [InlineData("Сериал / Show / Сезоны: 1-2 [2020, WEB-DL]", new[] { 1, 2 }, null, null, null)]
+    [InlineData("Show 3x09 720p", new[] { 3 }, 9, null, null)]
+    public void ParsesSeasonsAndEpisodeRanges(string title, int[] seasons, int? episode, int? from, int? to)
+    {
+        var r = P(title);
+
+        Assert.Equal(seasons, r.Seasons);
+        Assert.Equal(episode, r.Episode);
+        Assert.Equal(from is null ? null : (from.Value, to!.Value), r.EpisodeRange);
+    }
+
+    [Theory]
+    [InlineData("Show.S03E09.1080p", true)]
+    [InlineData("Show.S03.1080p", true)]
+    [InlineData("Show.S01-S05.Complete", true)]
+    [InlineData("Show / Сезон: 3 / Серии: 1-10 из 10", true)]
+    [InlineData("Show / Сезон: 3 / Серии: 1-5 из 10", false)]
+    [InlineData("Show.S03E08.1080p", false)]
+    [InlineData("Show.S02.1080p", false)]
+    [InlineData("Show.Complete.Series.1080p", true)] // no season info: kept, ranked down
+    public void EpisodeMatching(string title, bool matches) =>
+        Assert.Equal(matches, ReleaseScorer.Matches(P(title), new ReleaseScorer.EpisodeTarget(3, 9)));
+
+    [Fact]
+    public void TvReleasesSinkForMovies() =>
+        Assert.True(S("Movie.S01.2026.1080p.WEB-DL") < S("Movie.2026.1080p.WEB-DL"));
 }

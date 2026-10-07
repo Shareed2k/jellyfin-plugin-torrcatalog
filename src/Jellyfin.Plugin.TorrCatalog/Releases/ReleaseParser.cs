@@ -55,8 +55,9 @@ public sealed record ParsedRelease(
     AudioCodec Audio,
     bool Atmos,
     string[] Languages,
-    int? Season,
+    int[] Seasons,
     int? Episode,
+    (int From, int To)? EpisodeRange,
     int[] Years,
     bool IsJunk,
     bool IsUpscale);
@@ -76,9 +77,9 @@ public static class ReleaseParser
     // REMUX before BluRay, WEB rips before bare "WEB".
     static readonly (Regex Rule, ReleaseSource Value)[] Sources =
     [
-        (Tag(@"(?:hd)?cam(?:rip)?"), ReleaseSource.Cam),
-        (Tag(@"(?:hd)?ts|telesync|pdvd"), ReleaseSource.Telesync),
-        (Tag(@"tc|telecine"), ReleaseSource.Telecine),
+        (Tag(@"(?:hd)?cam(?:-?rip)?"), ReleaseSource.Cam),
+        (Tag(@"(?:hd)?ts(?:-?rip)?|telesync|pdvd"), ReleaseSource.Telesync),
+        (Tag(@"tc(?:-?rip)?|telecine"), ReleaseSource.Telecine),
         (Tag("(?:bd|uhd)?remux"), ReleaseSource.Remux),
         (Tag(@"blu-?ray|bdrip|brrip|bd(?:25|50|66|100)?"), ReleaseSource.BluRay),
         (Tag(@"web-?(?:dl-?)?rip|hdrip"), ReleaseSource.WebRip),
@@ -115,8 +116,17 @@ public static class ReleaseParser
     ];
 
     static readonly Regex Atmos = Tag("atmos");
-    static readonly Regex SeasonEpisode = Tag(@"s(\d{1,2})[ .]?e(\d{1,3})|(\d{1,2})x(\d{2,3})");
-    static readonly Regex SeasonOnly = Tag(@"s(\d{1,2})|season[ .]?(\d{1,2})");
+    // S01E04, S01E01-E08, 1x04
+    static readonly Regex SeasonEpisode = Tag(@"s(\d{1,2})[ .]?e(\d{1,3})(?:-e?(\d{1,3}))?|(\d{1,2})x(\d{2,3})");
+
+    // S01, S01-S03, S01-03
+    static readonly Regex SeasonTag = Tag(@"s(\d{1,2})(?:-s?(\d{1,2}))?");
+
+    // "Season 2", "Сезон: 1", "Сезоны: 1-3" (RuTracker style)
+    static readonly Regex SeasonWord = new(@"(?:season|сезон[ыа]?)[:\s]*(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // "Серии: 1-8 из 8", "Серия 5", "Episodes 1-10"
+    static readonly Regex EpisodeWord = new(@"(?:серии|серия|episodes?)[:\s]*(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex Year = Tag(@"(?:19|20)\d{2}");
     static readonly Regex Junk = Tag("sample|trailer|трейлер|featurette|extras|bonus|commentary");
     static readonly Regex Upscale = Tag(@"upscaled?|ai[ .-]?upscale");
@@ -129,16 +139,7 @@ public static class ReleaseParser
 
     public static ParsedRelease Parse(string title, IReadOnlyDictionary<string, Regex> languages)
     {
-        int? season = null, episode = null;
-        if (SeasonEpisode.Match(title) is { Success: true } se)
-        {
-            season = Int(se.Groups[1].Success ? se.Groups[1] : se.Groups[3]);
-            episode = Int(se.Groups[2].Success ? se.Groups[2] : se.Groups[4]);
-        }
-        else if (SeasonOnly.Match(title) is { Success: true } s)
-        {
-            season = Int(s.Groups[1].Success ? s.Groups[1] : s.Groups[2]);
-        }
+        var (seasons, episode, episodeRange) = SeasonsAndEpisodes(title);
 
         return new ParsedRelease(
             First(Resolutions, title),
@@ -148,11 +149,48 @@ public static class ReleaseParser
             First(Audios, title),
             Atmos.IsMatch(title),
             Languages(title, languages),
-            season,
+            seasons,
             episode,
+            episodeRange,
             Year.Matches(title).Select(m => int.Parse(m.Value, CultureInfo.InvariantCulture)).ToArray(),
             Junk.IsMatch(title),
             Upscale.IsMatch(title));
+    }
+
+    static (int[] Seasons, int? Episode, (int From, int To)? Range) SeasonsAndEpisodes(string title)
+    {
+        if (SeasonEpisode.Match(title) is { Success: true } se)
+        {
+            if (se.Groups[4].Success)
+            {
+                return ([Int(se.Groups[4])], Int(se.Groups[5]), null);
+            }
+
+            var first = Int(se.Groups[2]);
+            return se.Groups[3].Success
+                ? ([Int(se.Groups[1])], null, (first, Int(se.Groups[3])))
+                : ([Int(se.Groups[1])], first, null);
+        }
+
+        int[] seasons = SeasonTag.Match(title) is { Success: true } st ? Span(st)
+            : SeasonWord.Match(title) is { Success: true } sw ? Span(sw)
+            : [];
+
+        if (EpisodeWord.Match(title) is { Success: true } ew)
+        {
+            var from = Int(ew.Groups[1]);
+            return ew.Groups[2].Success ? (seasons, null, (from, Int(ew.Groups[2]))) : (seasons, from, null);
+        }
+
+        return (seasons, null, null);
+    }
+
+    // Groups 1..2 hold "from" and optional "to"; expands 1-3 to [1, 2, 3].
+    static int[] Span(Match m)
+    {
+        var from = Int(m.Groups[1]);
+        var to = m.Groups[2].Success ? Int(m.Groups[2]) : from;
+        return to >= from && to - from < 50 ? Enumerable.Range(from, to - from + 1).ToArray() : [from];
     }
 
     static string[] Languages(string title, IReadOnlyDictionary<string, Regex> languages)

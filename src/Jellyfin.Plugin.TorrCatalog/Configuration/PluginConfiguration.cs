@@ -45,6 +45,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets how long to wait for torrent metadata (file list) before trying the next release.</summary>
     public int MetadataTimeoutSeconds { get; set; } = 45;
 
+    /// <summary>
+    /// Gets or sets the folder for .strm files. When a client can't direct play any release, the item is written here,
+    /// added to a "TorrCatalog Movies/Shows" library, and playback is handed to Jellyfin (which can transcode).
+    /// Empty disables the fallback.
+    /// </summary>
+    public string PersistencePath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the Jellyfin URL written into .strm files; must be reachable by Jellyfin and clients. Empty = http://localhost:{port}.</summary>
+    public string StrmBaseUrl { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the secret in .strm URLs (Jellyfin's ffmpeg can't authenticate). Generated on first use.</summary>
+    public string StreamKey { get; set; } = string.Empty;
+
     /// <summary>Gets or sets title tags per language: "ru=RUS,RU,DUB;en=ENG,EN".</summary>
     public string LanguageAliases { get; set; } = "ru=RUS,RU,Russian,DUB,MVO,DVO,AVO,Дубляж,Дублированный;en=ENG,EN,English";
 
@@ -55,6 +68,8 @@ public class PluginConfiguration : BasePluginConfiguration
         new() { Id = "popular", Name = "Popular", Path = "movie/popular" },
         new() { Id = "top", Name = "Top Rated", Path = "movie/top_rated", Enabled = false },
         new() { Id = "kids", Name = "Kids", Path = "discover/movie", Query = "sort_by=popularity.desc&with_genres=10751", Enabled = false },
+        new() { Id = "trending-tv", Name = "Trending TV", Path = "trending/tv/week" },
+        new() { Id = "popular-tv", Name = "Popular TV", Path = "tv/popular" },
     ];
 }
 

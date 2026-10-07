@@ -97,6 +97,31 @@ public class ReleaseServiceTests
         Assert.Single(await _service.SearchMovieAsync(1, Ct));
     }
 
+    [Fact]
+    public async Task ReleasesForOtherTitlesAreDropped()
+    {
+        // Seen live: an Israeli film with no Russian title; text search returned other "… 3 (2026)" films.
+        _http.Respond = (r, _) => r.RequestUri!.Host == "api.themoviedb.org"
+            ? Json(new { Id = 1620123, Title = "בחורים טובים 3", OriginalTitle = "בחורים טובים 3", ReleaseDate = "2026-09-24", ImdbId = "tt46437739" })
+            : Prowlarr(new object[]
+            {
+                new { guid = "a", title = "Энола Холмс 3 / Enola Holmes 3 (2026) WEB-DL 1080p", size = 1L, protocol = "torrent", seeders = 50, magnetUrl = "magnet:?a", infoHash = "A" },
+                new { guid = "b", title = "Super Troopers 3 (2026) 2160p", size = 1L, protocol = "torrent", seeders = 50, magnetUrl = "magnet:?b", infoHash = "B", tmdbId = 999 },
+                new { guid = "c", title = "Good.Guys.3.2026.1080p.WEB-DL", size = 1L, protocol = "torrent", seeders = 50, magnetUrl = "magnet:?c", infoHash = "C", imdbId = 46437739 },
+            });
+
+        var ranked = await _service.SearchMovieAsync(1620123, Ct);
+
+        Assert.Equal(["Good.Guys.3.2026.1080p.WEB-DL"], ranked.Select(r => r.Source.Title));
+    }
+
+    [Theory]
+    [InlineData("Дюна: Часть вторая", "дюна часть вторая")]
+    [InlineData("ЁЛКИ-2", "елки 2")]
+    [InlineData("Spider-Man: Brand New Day", "spider man brand new day")]
+    public void TitlesNormalizeForMatching(string raw, string normalized) =>
+        Assert.Equal(normalized, ReleaseService.ItemIdentity.Normalize(raw));
+
     [Theory]
     [InlineData("")]
     [InlineData("ftp://prowlarr:9696")]

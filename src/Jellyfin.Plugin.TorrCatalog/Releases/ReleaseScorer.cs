@@ -17,10 +17,20 @@ public static class ReleaseScorer
                 .Select(l => l.ToLowerInvariant()).ToArray());
     }
 
+    /// <summary>The episode a TV search is for; null means a movie.</summary>
+    public sealed record EpisodeTarget(int Season, int Episode);
+
     /// <summary>Returns false when the release must not be offered at all (hard limits).</summary>
     public static bool Allowed(long size, int seeders, Preferences prefs) => size <= prefs.MaxSizeBytes && seeders >= prefs.MinSeeders;
 
-    public static (double Score, string[] Reasons) Score(ParsedRelease r, int seeders, int? expectedYear, Preferences prefs)
+    /// <summary>Whether a TV release can contain the target episode: right season, and the episode (or range) covers it.
+    /// Releases without any season info are kept (complete-series packs often lack tags) but ranked down.</summary>
+    public static bool Matches(ParsedRelease r, EpisodeTarget target) =>
+        (r.Seasons.Length == 0 || r.Seasons.Contains(target.Season))
+        && (r.Episode is null || r.Episode == target.Episode)
+        && (r.EpisodeRange is not { } range || (target.Episode >= range.From && target.Episode <= range.To));
+
+    public static (double Score, string[] Reasons) Score(ParsedRelease r, int seeders, int? expectedYear, Preferences prefs, EpisodeTarget? episode = null)
     {
         var reasons = new List<string>();
         double score = 0;
@@ -64,12 +74,15 @@ public static class ReleaseScorer
         // Seeds: log bonus capped at 60 (63+ seeders); swarm size drives streaming start-up. Dead torrents sink.
         Add(seeders == 0 ? -500 : Math.Round(Math.Min(60, 10 * Math.Log2(seeders + 1))), $"{seeders} seeds");
 
-        if (expectedYear is { } year && r.Years.Length > 0 && !r.Years.Any(y => Math.Abs(y - year) <= 1))
+        // Series titles carry the show's first-air year, not the episode's: year checks are for movies only.
+        if (episode is null && expectedYear is { } year && r.Years.Length > 0 && !r.Years.Any(y => Math.Abs(y - year) <= 1))
         {
             Add(-300, "wrong year");
         }
 
-        Add(r.Episode is not null ? -500 : 0, "TV episode");
+        var isTvRelease = r.Episode is not null || r.EpisodeRange is not null || r.Seasons.Length > 0;
+        Add(episode is null && isTvRelease ? -500 : 0, "TV release");
+        Add(episode is not null && r.Seasons.Length == 0 ? -100 : 0, "no season info");
         Add(r.IsJunk ? -1000 : 0, "sample/trailer/extras");
         Add(r.IsUpscale ? -60 : 0, "upscale"); // fake 4K: rank it roughly like the 1080p it came from
 
